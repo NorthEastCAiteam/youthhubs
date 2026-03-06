@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/filter.css">
+<link rel="stylesheet" href="css/nouislider.min.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+        <title></title>
+    </head>
+    <body>
+<div style="
+position:absolute;
+top:10px;
+left:100px;
+background:white;
+padding:10px;
+border-radius:4px;
+font-family:sans-serif;
+z-index:9999;
+box-shadow:0 0 5px rgba(0,0,0,0.3);">
+<b>NECA – Unmet Youth Need Index</b><br>
+Deciles 1–10 by Medium Super Output Area (MSOA)
+</div>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="js/tailDT.js"></script>
+<script src="js/nouislider.min.js"></script>
+<script src="js/wNumb.js"></script>
+        <script src="data/Decilesofunmentyouthneed_1.js"></script>
+        <script src="data/NECA_2.js"></script>
+        <script>
+        var highlightLayer;
+        function highlightFeature(e) {
+            highlightLayer = e.target;
+            highlightLayer.openPopup();
+        }
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        })
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // modify popup if contains media
+        function addClassToPopupIfMedia(content, popup) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            var imgTd = tempDiv.querySelector('td img');
+            if (imgTd) {
+                var src = imgTd.getAttribute('src');
+                if (/\.(jpg|jpeg|png|gif|bmp|webp|avif)$/i.test(src)) {
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp3|wav|ogg|aac)$/i.test(src)) {
+                    var audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = src;
+                    imgTd.parentNode.replaceChild(audio, imgTd);
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp4|webm|ogg|mov)$/i.test(src)) {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.src = src;
+                    video.style.width = "400px";
+                    video.style.height = "300px";
+                    video.style.maxHeight = "60vh";
+                    video.style.maxWidth = "60vw";
+                    imgTd.parentNode.replaceChild(video, imgTd);
+                    popup._contentNode.classList.add('media');
+                    // Aggiorna il popup quando il video carica i metadati
+                    video.addEventListener('loadedmetadata', function() {
+                        popup.update();
+                    });
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else {
+                    popup._contentNode.classList.remove('media');
+                }
+            } else {
+                popup._contentNode.classList.remove('media');
+            }
+        }
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+            if (bounds_group.getLayers().length) {
+                map.fitBounds(bounds_group.getBounds());
+            }
+        }
+        map.createPane('pane_ESRIGraylight_0');
+        map.getPane('pane_ESRIGraylight_0').style.zIndex = 400;
+        var layer_ESRIGraylight_0 = L.tileLayer('http://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+            pane: 'pane_ESRIGraylight_0',
+            opacity: 1.0,
+            attribution: '',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_ESRIGraylight_0;
+        map.addLayer(layer_ESRIGraylight_0);
+        function pop_Decilesofunmentyouthneed_1(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">UNI data - NECA cut_Local Authority</th>\
+                        <td>' + (feature.properties['UNI data - NECA cut_Local Authority'] !== null ? autolinker.link(String(feature.properties['UNI data - NECA cut_Local Authority']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">UNI data - NECA cut_MSOA Name</th>\
+                        <td>' + (feature.properties['UNI data - NECA cut_MSOA Name'] !== null ? autolinker.link(String(feature.properties['UNI data - NECA cut_MSOA Name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">UNI data - NECA cut_Level of Unmet Youth Need (Deciles)</th>\
+                        <td>' + (feature.properties['UNI data - NECA cut_Level of Unmet Youth Need (Deciles)'] !== null ? autolinker.link(String(feature.properties['UNI data - NECA cut_Level of Unmet Youth Need (Deciles)']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">UNI data - NECA cut_ASB rate</th>\
+                        <td>' + (feature.properties['UNI data - NECA cut_ASB rate'] !== null ? autolinker.link(String(feature.properties['UNI data - NECA cut_ASB rate']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">UNI data - NECA cut_IDACI rate</th>\
+                        <td>' + (feature.properties['UNI data - NECA cut_IDACI rate'] !== null ? autolinker.link(String(feature.properties['UNI data - NECA cut_IDACI rate']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">UNI data - NECA cut_Youth Population</th>\
+                        <td>' + (feature.properties['UNI data - NECA cut_Youth Population'] !== null ? autolinker.link(String(feature.properties['UNI data - NECA cut_Youth Population']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['UNI data - NECA cut_Custom ranking'] !== null ? autolinker.link(String(feature.properties['UNI data - NECA cut_Custom ranking']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Decilesofunmentyouthneed_1_0(feature) {
+            switch(String(feature.properties['UNI data - NECA cut_Level of Unmet Youth Need (Deciles)'])) {
+                case '1':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(43,131,186,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '2':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(100,171,176,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '3':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(157,211,166,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '4':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(199,232,173,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '5':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(236,247,185,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '6':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(255,237,170,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '7':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(254,201,128,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '8':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(249,157,89,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '9':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(232,91,59,0.8)',
+                interactive: true,
+            }
+                    break;
+                case '10':
+                    return {
+                pane: 'pane_Decilesofunmentyouthneed_1',
+                opacity: 1,
+                color: 'rgba(100,100,100,0.8)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(215,25,28,0.8)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_Decilesofunmentyouthneed_1');
+        map.getPane('pane_Decilesofunmentyouthneed_1').style.zIndex = 401;
+        map.getPane('pane_Decilesofunmentyouthneed_1').style['mix-blend-mode'] = 'normal';
+        var layer_Decilesofunmentyouthneed_1 = new L.geoJson(json_Decilesofunmentyouthneed_1, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Decilesofunmentyouthneed_1',
+            layerName: 'layer_Decilesofunmentyouthneed_1',
+            pane: 'pane_Decilesofunmentyouthneed_1',
+            onEachFeature: pop_Decilesofunmentyouthneed_1,
+            style: style_Decilesofunmentyouthneed_1_0,
+        });
+        bounds_group.addLayer(layer_Decilesofunmentyouthneed_1);
+        map.addLayer(layer_Decilesofunmentyouthneed_1);
+        function pop_NECA_2(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['fid'] !== null ? autolinker.link(String(feature.properties['fid']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LAD25CD'] !== null ? autolinker.link(String(feature.properties['LAD25CD']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LAD25NM'] !== null ? autolinker.link(String(feature.properties['LAD25NM']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LAD25NMW'] !== null ? autolinker.link(String(feature.properties['LAD25NMW']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['BNG_E'] !== null ? autolinker.link(String(feature.properties['BNG_E']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['BNG_N'] !== null ? autolinker.link(String(feature.properties['BNG_N']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LONG'] !== null ? autolinker.link(String(feature.properties['LONG']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LAT'] !== null ? autolinker.link(String(feature.properties['LAT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['GlobalID'] !== null ? autolinker.link(String(feature.properties['GlobalID']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_NECA_2_0() {
+            return {
+                pane: 'pane_NECA_2',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.665)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 3.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(255,158,23,0.0)',
+                interactive: false,
+            }
+        }
+        map.createPane('pane_NECA_2');
+        map.getPane('pane_NECA_2').style.zIndex = 402;
+        map.getPane('pane_NECA_2').style['mix-blend-mode'] = 'normal';
+        var layer_NECA_2 = new L.geoJson(json_NECA_2, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_NECA_2',
+            layerName: 'layer_NECA_2',
+            pane: 'pane_NECA_2',
+            onEachFeature: pop_NECA_2,
+            style: style_NECA_2_0,
+        });
+        bounds_group.addLayer(layer_NECA_2);
+        map.addLayer(layer_NECA_2);
+        var overlaysTree = [
+            {label: '<img src="legend/NECA_2.png" /> NECA', layer: layer_NECA_2},
+            {label: 'Deciles of unment youth need<br /><table><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_10.png" /></td><td>1</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_21.png" /></td><td>2</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_32.png" /></td><td>3</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_43.png" /></td><td>4</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_54.png" /></td><td>5</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_65.png" /></td><td>6</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_76.png" /></td><td>7</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_87.png" /></td><td>8</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_98.png" /></td><td>9</td></tr><tr><td style="text-align: center;"><img src="legend/Decilesofunmentyouthneed_1_109.png" /></td><td>10</td></tr></table>', layer: layer_Decilesofunmentyouthneed_1},
+            {label: "ESRI Gray (light)", layer: layer_ESRIGraylight_0, radioGroup: 'bm' },]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: false, 
+        });
+        lay.addTo(map);
+		document.addEventListener("DOMContentLoaded", function() {
+            // set new Layers List height which considers toggle icon
+            function newLayersListHeight() {
+                var layerScrollbarElement = document.querySelector('.leaflet-control-layers-scrollbar');
+                if (layerScrollbarElement) {
+                    var layersListElement = document.querySelector('.leaflet-control-layers-list');
+                    var originalHeight = layersListElement.style.height 
+                        || window.getComputedStyle(layersListElement).height;
+                    var newHeight = parseFloat(originalHeight) - 50;
+                    layersListElement.style.height = newHeight + 'px';
+                }
+            }
+            var isLayersListExpanded = true;
+            var controlLayersElement = document.querySelector('.leaflet-control-layers');
+            var toggleLayerControl = document.querySelector('.leaflet-control-layers-toggle');
+            // toggle Collapsed/Expanded and apply new Layers List height
+            toggleLayerControl.addEventListener('click', function() {
+                if (isLayersListExpanded) {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                } else {
+                    controlLayersElement.classList.add('leaflet-control-layers-expanded');
+                }
+                isLayersListExpanded = !isLayersListExpanded;
+                newLayersListHeight()
+            });	
+			// apply new Layers List height if toggle layerstree
+			if (controlLayersElement) {
+				controlLayersElement.addEventListener('click', function(event) {
+					var toggleLayerHeaderPointer = event.target.closest('.leaflet-layerstree-header-pointer span');
+					if (toggleLayerHeaderPointer) {
+						newLayersListHeight();
+					}
+				});
+			}
+            // Collapsed/Expanded at Start to apply new height
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            // Collapsed touch/small screen
+            var isSmallScreen = window.innerWidth < 650;
+            if (isSmallScreen) {
+                setTimeout(function() {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                    isLayersListExpanded = !isLayersListExpanded;
+                }, 500);
+            }  
+        });       
+        setBounds();
+        var mapDiv = document.getElementById('map');
+        var row = document.createElement('div');
+        row.className="row";
+        row.id="all";
+        row.style.height = "100%";
+        var col1 = document.createElement('div');
+        col1.className="col9";
+        col1.id = "mapWindow";
+        col1.style.height = "99%";
+        col1.style.width = "80%";
+        col1.style.display = "inline-block";
+        var col2 = document.createElement('div');
+        col2.className="col3";
+        col2.id = "menu";
+        col2.style.display = "inline-block";
+        mapDiv.parentNode.insertBefore(row, mapDiv);
+        document.getElementById("all").appendChild(col1);
+        document.getElementById("all").appendChild(col2);
+        col1.appendChild(mapDiv)
+        var Filters = {"UNI data - NECA cut_Level of Unmet Youth Need (Deciles)": "int","LAD25NM": "str"};
+        function filterFunc() {
+          map.eachLayer(function(lyr){
+          if ("options" in lyr && "dataVar" in lyr["options"]){
+            features = this[lyr["options"]["dataVar"]].features.slice(0);
+            try{
+              for (key in Filters){
+                keyS = key.replace(/[^a-zA-Z0-9_]/g, "")
+                if (Filters[key] == "str" || Filters[key] == "bool"){
+                  var selection = [];
+                  var options = document.getElementById("sel_" + keyS).options
+                  for (var i=0; i < options.length; i++) {
+                    if (options[i].selected) selection.push(options[i].value);
+                  }
+                    try{
+                      if (key in features[0].properties){
+                        for (i = features.length - 1;
+                          i >= 0; --i){
+                          if (selection.indexOf(
+                          features[i].properties[key])<0
+                          && selection.length>0) {
+                          features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                  }
+                }
+                if (Filters[key] == "int"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (parseInt(features[i].properties[key])
+                          < sliderVals[0]
+                          || parseInt(features[i].properties[key])
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "real"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (features[i].properties[key]
+                          < sliderVals[0]
+                          || features[i].properties[key]
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "date"
+                  || Filters[key] == "datetime"
+                  || Filters[key] == "time"){
+                  try{
+                    if (key in features[0].properties){
+                      HTMLkey = key.replace(/[&\/\\#,+()$~%.'":*?<>{} ]/g, '');
+                      startdate = document.getElementById("dat_" +
+                        HTMLkey + "_date1").value.replace(" ", "T");
+                      enddate = document.getElementById("dat_" +
+                        HTMLkey + "_date2").value.replace(" ", "T");
+                      for (i = features.length - 1; i >= 0; --i){
+                        if (features[i].properties[key] < startdate
+                          || features[i].properties[key] > enddate){
+                          features.splice(i,1);
+                        }
+                      }
+                    }
+                  } catch(err){
+                  }
+                }
+              }
+            } catch(err){
+            }
+          this[lyr["options"]["layerName"]].clearLayers();
+          this[lyr["options"]["layerName"]].addData(features);
+          }
+          })
+        }
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles = document.createElement("div");
+            div_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.id = "div_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles";
+            div_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.className = "slider";
+            document.getElementById("menu").appendChild(div_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles);
+            var lab_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles = document.createElement('div');
+            lab_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.innerHTML  = 'UNI data - NECA cut_Level of Unmet Youth Need (Deciles): <span id="val_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles"></span>';
+            lab_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.className = 'filterlabel';
+            document.getElementById("menu").appendChild(lab_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles);
+            var reset_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles = document.createElement('div');
+            reset_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.innerHTML = 'clear filter';
+            reset_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.className = 'filterlabel';
+            lab_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.className = 'filterlabel';
+            reset_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.onclick = function() {
+                sel_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.noUiSlider.reset();
+            };
+            document.getElementById("menu").appendChild(reset_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles);
+            var sel_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles = document.getElementById('div_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles');
+            noUiSlider.create(sel_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles, {
+                connect: true,
+                start: [1, 10],
+                step: 1,
+                format: wNumb({
+                    decimals: 0,
+                    }),
+                range: {
+                min: 1,
+                max: 10
+                }
+            });
+            sel_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.noUiSlider.on('update', function (values) {
+            filterVals =[];
+            for (value in values){
+            filterVals.push(parseInt(value))
+            }
+            val_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles = document.getElementById('val_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles');
+            val_UNIdataNECAcut_LevelofUnmetYouthNeedDeciles.innerHTML = values.join(' - ');
+                filterFunc()
+            });
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_LAD25NM = document.createElement('div');
+            div_LAD25NM.id = "div_LAD25NM";
+            div_LAD25NM.className= "filterselect";
+            document.getElementById("menu").appendChild(div_LAD25NM);
+            sel_LAD25NM = document.createElement('select');
+            sel_LAD25NM.multiple = true;
+            sel_LAD25NM.size = 7;
+            sel_LAD25NM.id = "sel_LAD25NM";
+            var LAD25NM_options_str = "<option value='' unselected></option>";
+            sel_LAD25NM.onchange = function(){filterFunc()};
+            LAD25NM_options_str  += '<option value="County Durham">County Durham</option>';
+            LAD25NM_options_str  += '<option value="Gateshead">Gateshead</option>';
+            LAD25NM_options_str  += '<option value="Newcastle upon Tyne">Newcastle upon Tyne</option>';
+            LAD25NM_options_str  += '<option value="North Tyneside">North Tyneside</option>';
+            LAD25NM_options_str  += '<option value="Northumberland">Northumberland</option>';
+            LAD25NM_options_str  += '<option value="South Tyneside">South Tyneside</option>';
+            LAD25NM_options_str  += '<option value="Sunderland">Sunderland</option>';
+            sel_LAD25NM.innerHTML = LAD25NM_options_str;
+            div_LAD25NM.appendChild(sel_LAD25NM);
+            var lab_LAD25NM = document.createElement('div');
+            lab_LAD25NM.innerHTML = 'LAD25NM';
+            lab_LAD25NM.className = 'filterlabel';
+            div_LAD25NM.appendChild(lab_LAD25NM);
+            var reset_LAD25NM = document.createElement('div');
+            reset_LAD25NM.innerHTML = 'clear filter';
+            reset_LAD25NM.className = 'filterlabel';
+            reset_LAD25NM.onclick = function() {
+                var options = document.getElementById("sel_LAD25NM").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_LAD25NM.appendChild(reset_LAD25NM);
+        </script>        
+    </body>
+</html>
